@@ -1,0 +1,15 @@
+# Create a Blueprint in Render from this repository.
+# Free is for evaluation; choose an always-on paid instance for game nights.
+services:
+  - type: web
+    name: slop-or-human
+    runtime: node
+    plan: free
+    buildCommand: npm ci --include=dev && npm test && npm prune --omit=dev
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: NODE_ENV
+        value: production

@@ -42,6 +42,19 @@ npm test
 
 Node's test runner checks private ballots for rooms of 4–24 players, exposure balance, scoring, authorization, deadlines, writer rotation, fallback, host transfer, and a complete five-player game over real Socket.IO connections including reconnect and replay. `/health` returns `{"ok":true}`. There is no frontend build step.
 
+## Deploy on Render
+
+The included `render.yaml` runs the frontend and WebSocket server together as one Node web service. Render provides the public HTTPS address; no frontend URL or CORS changes are needed.
+
+1. In [Render](https://dashboard.render.com/), choose **New → Blueprint**, connect `maxbye3/sloppy-vaseline`, and select `main`.
+2. Review the `slop-or-human` service and deploy. The Blueprint uses a free instance for evaluation. For reliable game nights, select an always-on paid instance in Render: free instances can sleep after inactivity, and waking takes time.
+3. For genuine AI responses, add `SLOP_AI_API_KEY` securely in the service's **Environment** settings. It is optional and intentionally absent from the Blueprint so fallback games can deploy without a key. Saving it may restart the service.
+4. After deployment succeeds, open the HTTPS address Render provides and create a room. Share the invite link from that public site, rather than a localhost URL.
+
+The build installs locked dependencies, runs tests, then removes development dependencies. The service starts with `npm start`, listens on Render's supplied `PORT`, and reports readiness at `/health`. Keep a single instance because rooms live in process memory. Deployments and restarts end active games; deploy between sessions and consider disabling automatic deployments in the Render dashboard.
+
+Actual deployment requires your Render account and connection to this GitHub repository. The Blueprint alone does not create a hosted service or incur a paid-plan charge.
+
 ## Hosting scope
 
 Serve one Node process behind an HTTPS reverse proxy with WebSocket support. Use the public HTTPS origin in invite links so other devices can join. The included server has input validation, bounded image decoding, per-connection event limits, and room limits, but is intended for small private parties.
