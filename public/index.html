@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#ffffff" />
+    <meta
+      name="description"
+      content="A party game for people who sound suspiciously like AI. Write the slop. Spot the bot. Fool your friends."
+    />
+    <title>Slop or Human — A game of artificial impressions</title>
+    <link rel="stylesheet" href="/style.css" />
+    <script src="/socket.io/socket.io.js" defer></script>
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <header class="masthead">
+      <a href="/" class="wordmark">SLOP OR HUMAN</a
+      ><span class="edition">A game of artificial impressions</span
+      ><span id="connection" class="connection">Connecting…</span>
+    </header>
+    <main id="app"></main>
+    <p id="error" class="error" role="alert" hidden></p>
+    <footer>
+      <span>Human creativity. Artificial credibility.</span
+      ><button id="rules-open" class="text-button">How to play ↗</button>
+    </footer>
+    <dialog id="rules">
+      <div class="dialog-content">
+        <p class="eyebrow">THE RULES</p>
+        <h2>Sound artificial.<br />Think human.</h2>
+        <ol>
+          <li>Gather at least four players in a room.</li>
+          <li>
+            One player writes a scenario. Everyone else has 60 seconds to write
+            a convincing bit of AI slop.
+          </li>
+          <li>
+            Find the AI response on your private ballot. Confirm your vote
+            within 20 seconds.
+          </li>
+          <li>
+            Earn 10 points for spotting AI. Earn up to 15 deception points for
+            fooling people, adjusted for exposure.
+          </li>
+        </ol>
+        <p class="small">
+          You never see your own response. Ballots contain up to three human
+          responses plus the AI entry; smaller rounds have fewer options. If AI
+          generation is unavailable, a fallback is disclosed at reveal.
+        </p>
+        <button id="rules-close">Got it</button>
+      </div>
+    </dialog>
+  </body>
+</html>

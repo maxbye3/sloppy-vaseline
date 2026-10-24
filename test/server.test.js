@@ -1,0 +1,165 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { randomBytes } from "node:crypto";
+import { io as client } from "socket.io-client";
+import { createApp } from "../server/index.js";
+import sharp from "sharp";
+
+const waitFor = async (fn, timeout = 3000) => {
+  const deadline = Date.now() + timeout;
+  while (!fn()) {
+    if (Date.now() > deadline)
+      throw new Error("Timed out waiting for game state");
+    await new Promise((r) => setTimeout(r, 5));
+  }
+};
+
+test("profile images are validated and converted to square compressed WebP", async (t) => {
+  const server = createApp();
+  await new Promise((r) => server.http.listen(0, "127.0.0.1", r));
+  const socket = client(`http://127.0.0.1:${server.http.address().port}`);
+  t.after(async () => {
+    socket.disconnect();
+    await server.close();
+  });
+  await new Promise((r) => socket.once("connect", r));
+  const send = (data) =>
+    new Promise((resolve) => socket.emit("join", data, resolve));
+  const token = randomBytes(32).toString("hex");
+  const payload = { name: "Photo player", token, create: true };
+  const invalid = await send({
+    ...payload,
+    image: "data:image/svg+xml;base64,PHN2Zz4=",
+  });
+  assert.equal(invalid.ok, false);
+  const broken = await send({
+    ...payload,
+    image: "data:image/png;base64,bm90YW5pbWFnZQ==",
+  });
+  assert.equal(broken.ok, false);
+  const jpeg = await sharp({
+    create: { width: 240, height: 360, channels: 3, background: "#ff0000" },
+  })
+    .jpeg()
+    .toBuffer();
+  let state;
+  socket.on("state", (s) => {
+    state = s;
+  });
+  const valid = await send({
+    ...payload,
+    image: `data:image/jpeg;base64,${jpeg.toString("base64")}`,
+  });
+  assert.equal(valid.ok, true);
+  await waitFor(() => state);
+  const image = state.players[0].image;
+  assert.ok(image.startsWith("data:image/webp;base64,"));
+  const data = Buffer.from(image.split(",")[1], "base64");
+  const metadata = await sharp(data).metadata();
+  assert.equal(metadata.width, 128);
+  assert.equal(metadata.height, 128);
+  assert.equal(metadata.format, "webp");
+  assert.ok(data.length < 10000);
+});
+
+test("real sockets complete a five-player game, reconnect, and keep ballots private", async (t) => {
+  const server = createApp({
+    generate: async () => ({
+      text: "An artificially eloquent apology.",
+      fallback: false,
+    }),
+    durations: { selecting: 15 },
+  });
+  await new Promise((r) => server.http.listen(0, "127.0.0.1", r));
+  const url = `http://127.0.0.1:${server.http.address().port}`;
+  const clients = [];
+  t.after(async () => {
+    clients.forEach((c) => c.socket.disconnect());
+    await server.close();
+  });
+  async function connect(token = randomBytes(32).toString("hex")) {
+    const socket = client(url, {
+      transports: ["websocket"],
+      reconnection: false,
+    });
+    const c = { socket, token, state: null };
+    clients.push(c);
+    socket.on("state", (s) => {
+      c.state = s;
+    });
+    await new Promise((resolve, reject) => {
+      socket.once("connect", resolve);
+      socket.once("connect_error", reject);
+    });
+    c.send = (event, data = {}) =>
+      new Promise((resolve, reject) =>
+        socket
+          .timeout(2000)
+          .emit(event, data, (err, res) => (err ? reject(err) : resolve(res))),
+      );
+    return c;
+  }
+  assert.deepEqual(await (await fetch(`${url}/health`)).json(), { ok: true });
+  const html = await (await fetch(url)).text();
+  assert.match(html, /SLOP OR HUMAN/);
+  const host = await connect();
+  assert.equal(
+    (await host.send("join", { name: "Host", token: host.token, create: true }))
+      .ok,
+    true,
+  );
+  const code = host.state.code;
+  assert.equal((await host.send("start")).ok, false);
+  for (let i = 1; i < 5; i++) {
+    const c = await connect();
+    assert.equal(
+      (await c.send("join", { name: `Human ${i}`, token: c.token, code })).ok,
+      true,
+    );
+  }
+  const original = clients[4];
+  const playerId = original.state.self;
+  original.socket.disconnect();
+  const reconnect = await connect(original.token);
+  assert.equal(
+    (
+      await reconnect.send("join", {
+        code,
+        token: reconnect.token,
+        name: "Human 4",
+      })
+    ).ok,
+    true,
+  );
+  assert.equal(reconnect.state.self, playerId);
+  assert.equal(reconnect.state.players.length, 5);
+  const active = [host, clients[1], clients[2], clients[3], reconnect];
+  assert.equal((await active[1].send("start")).ok, false);
+  await host.send("start");
+  await waitFor(() => active.every((c) => c.state.phase === "scenario"));
+  const writer = active.find((c) => c.state.self === c.state.writer);
+  await writer.send("scenario", { text: "A heartfelt lunch apology" });
+  await waitFor(() => active.every((c) => c.state.phase === "writing"));
+  for (const c of active.filter((c) => c !== writer))
+    await c.send("submit", { text: `Human response from ${c.state.self}` });
+  await waitFor(() => active.every((c) => c.state.phase === "voting"));
+  for (const c of active) {
+    assert.equal(c.state.ballot.length, 4);
+    assert.ok(c.state.ballot.every((r) => !("author" in r)));
+    assert.ok(!JSON.stringify(c.state).includes("OPENAI"));
+    const ai = c.state.ballot.find(
+      (r) => r.text === "An artificially eloquent apology.",
+    );
+    assert.equal((await c.send("vote", { id: ai.id })).ok, true);
+    assert.equal((await c.send("vote", { id: ai.id })).ok, false);
+  }
+  await waitFor(() => active.every((c) => c.state.phase === "reveal"));
+  assert.ok(host.state.players.every((p) => p.score === 10));
+  await host.send("leaderboard");
+  await host.send("end");
+  await waitFor(() => host.state.phase === "final");
+  assert.equal(host.state.awards[1].winners.length, 5);
+  await host.send("again");
+  await waitFor(() => host.state.phase === "lobby");
+  assert.ok(host.state.players.every((p) => p.score === 0));
+});
