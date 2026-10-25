@@ -1,7 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { Room, makeBallots } from "../server/game.js";
-import { generateResponse } from "../server/ai.js";
 
 const flush = () => new Promise((resolve) => setImmediate(resolve));
 function fixture(n = 5) {
@@ -159,22 +158,6 @@ test("rejects overlong and empty text and games with too few players", async (t)
   );
 });
 
-test("AI fallback is bounded and responds to the scenario without human input", async () => {
-  const prior = process.env.OPENAI_API_KEY;
-  const slopPrior = process.env.SLOP_AI_API_KEY;
-  delete process.env.OPENAI_API_KEY;
-  delete process.env.SLOP_AI_API_KEY;
-  try {
-    const result = await generateResponse("A love letter");
-    assert.equal(result.fallback, true);
-    assert.ok(result.text.includes("A love letter"));
-    assert.ok([...result.text].length <= 180);
-  } finally {
-    if (prior !== undefined) process.env.OPENAI_API_KEY = prior;
-    if (slopPrior !== undefined) process.env.SLOP_AI_API_KEY = slopPrior;
-  }
-});
-
 test("host transfers after disconnect grace and returning players keep their scores", async (t) => {
   const room = new Room(
     "ABCDEF",
@@ -195,3 +178,86 @@ test("host transfers after disconnect grace and returning players keep their sco
   assert.equal(room.players.size, 2);
   assert.equal(room.host, "guest");
 });
+
+for (const failBeforeSubmissions of [true, false]) {
+  test(`failed AI generation ${failBeforeSubmissions ? "before" : "after"} submissions preserves answers and recovers on host retry`, async (t) => {
+    const room = fixture();
+    t.after(() => room.destroy());
+    const requests = [];
+    room.generate = (scenario) =>
+      new Promise((resolve, reject) =>
+        requests.push({ scenario, resolve, reject }),
+      );
+    await writing(room);
+    const writer = room.writer;
+    if (failBeforeSubmissions) {
+      requests[0].reject(new Error("Provider unavailable"));
+      await flush();
+    }
+    for (const id of room.participants.filter((id) => id !== writer))
+      room.submit(id, `Human ${id}`);
+    if (!failBeforeSubmissions) {
+      requests[0].reject(new Error("Provider unavailable"));
+      await flush();
+    }
+    assert.equal(room.phase, "ai-error");
+    const humans = structuredClone(room.responses);
+    assert.equal(humans.length, 4);
+    assert.ok(humans.every((r) => r.author !== null));
+    assert.ok([...room.players.values()].every((p) => p.score === 0));
+    assert.equal(room.state(room.host).ballot.length, 0);
+    assert.ok(!("responses" in room.state(room.host)));
+    const guest = room.participants.find((id) => id !== room.host);
+    assert.throws(() => room.retryAi(guest), /host/);
+    room.retryAi(room.host);
+    assert.equal(room.state(room.host).aiPending, true);
+    assert.throws(() => room.retryAi(room.host), /cannot/);
+    await flush();
+    assert.equal(requests.length, 2);
+    assert.equal(requests[1].scenario, requests[0].scenario);
+    requests[1].resolve({
+      text: "I'm sorry I ate your lunch. The next one is on me.",
+      model: "test-model",
+      responseId: "test-response",
+    });
+    await flush();
+    assert.equal(room.phase, "voting");
+    assert.equal(room.writer, writer);
+    assert.deepEqual(
+      room.responses.filter((r) => r.author !== null),
+      humans,
+    );
+    assert.equal(room.responses.filter((r) => r.author === null).length, 1);
+    assert.ok(
+      room
+        .state(room.host)
+        .ballot.every((r) => !("model" in r) && !("author" in r)),
+    );
+    assert.ok(!JSON.stringify(room.state(room.host)).includes("test-model"));
+    const ai = room.responses.find((r) => r.author === null);
+    for (const id of room.participants) room.vote(id, ai.id);
+    assert.equal(room.phase, "reveal");
+    assert.equal(
+      room.state(room.host).responses.find((r) => r.author === null).model,
+      "test-model",
+    );
+    assert.ok([...room.players.values()].every((p) => p.score === 10));
+  });
+}
+
+for (const ai of [
+  { text: "A canned substitute", fallback: true },
+  { text: " " },
+  { text: "x".repeat(181) },
+]) {
+  test("invalid or fallback entries never reach voting", async (t) => {
+    const room = fixture();
+    t.after(() => room.destroy());
+    room.generate = async () => ai;
+    await writing(room);
+    room.closeWriting();
+    assert.equal(room.phase, "ai-error");
+    assert.equal(room.responses.length, 0);
+    assert.ok([...room.players.values()].every((p) => p.score === 0));
+  });
+}

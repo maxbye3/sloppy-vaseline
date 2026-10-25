@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { Server } from "socket.io";
 import sharp from "sharp";
 import { Room } from "./game.js";
-import { generateResponse } from "./ai.js";
+import { generateResponse, isAiConfigured } from "./ai.js";
 
 export function createApp({ generate = generateResponse, durations } = {}) {
   const app = express();
@@ -28,7 +28,10 @@ export function createApp({ generate = generateResponse, durations } = {}) {
   function broadcast(room) {
     for (const socket of io.sockets.sockets.values()) {
       if (socket.data.room === room.code)
-        socket.emit("state", room.state(socket.data.player));
+        socket.emit("state", {
+          ...room.state(socket.data.player),
+          aiConfigured: generate !== generateResponse || isAiConfigured(),
+        });
     }
   }
   io.on("connection", (socket) => {
@@ -152,10 +155,17 @@ export function createApp({ generate = generateResponse, durations } = {}) {
       end: "end",
       again: "again",
       draft: "draft",
+      "retry-ai": "retryAi",
     })) {
       guarded(event, (data) => {
         const room = rooms.get(socket.data.room);
         if (!room) throw new Error("Join a room first.");
+        if (
+          ["start", "next"].includes(event) &&
+          generate === generateResponse &&
+          !isAiConfigured()
+        )
+          throw new Error("Connect AI responses before starting a round.");
         room[method](
           socket.data.player,
           event === "vote" ? data.id : data.text,

@@ -149,8 +149,9 @@ export class Room {
     this.exposure = {};
     this.results = [];
     this.aiReady = false;
+    this.aiPending = false;
+    this.aiError = false;
     this.closing = false;
-    this.fallback = false;
     this.change("selecting", this.times.selecting);
   }
   expire() {
@@ -166,26 +167,58 @@ export class Room {
       throw new Error("Only the scenario writer can submit now.");
     text = validateText(text);
     this.scenario = text;
-    const round = this.round;
     this.change("writing", this.times.writing);
+    this.requestAi();
+  }
+  requestAi() {
+    if (this.aiPending || this.aiReady) return;
+    const round = this.round;
+    this.aiPending = true;
+    this.aiError = false;
     // Neither drafts nor human submissions are ever passed to the AI provider.
     Promise.resolve()
-      .then(() => this.generate(text))
-      .catch(() => ({
-        text: "Let us approach this challenge with empathy, clarity, and a renewed commitment to actionable next steps.",
-        fallback: true,
-      }))
+      .then(() => this.generate(this.scenario))
       .then((ai) => {
-        if (this.round !== round || this.phase !== "writing") return;
+        if (
+          this.round !== round ||
+          !["writing", "ai-error"].includes(this.phase)
+        )
+          return;
+        if (
+          ai?.fallback ||
+          typeof ai?.text !== "string" ||
+          !ai.text.trim() ||
+          length(ai.text.trim()) > 180
+        )
+          throw new Error("AI generation did not return a valid response.");
         this.responses.push({
           id: randomUUID(),
           author: null,
-          text: [...ai.text].slice(0, 180).join(""),
+          text: ai.text.trim(),
+          model: ai.model,
+          responseId: ai.responseId,
         });
-        this.fallback = ai.fallback;
+        this.aiPending = false;
         this.aiReady = true;
         if (this.closing) this.openVoting();
+      })
+      .catch(() => {
+        if (
+          this.round !== round ||
+          !["writing", "ai-error"].includes(this.phase)
+        )
+          return;
+        this.aiPending = false;
+        this.aiError = true;
+        if (this.closing) this.change("ai-error");
       });
+  }
+  retryAi(id) {
+    this.requireHost(id);
+    if (this.phase !== "ai-error" || this.aiPending)
+      throw new Error("AI generation cannot be retried now.");
+    this.requestAi();
+    this.emit();
   }
   eligible(id) {
     return this.participants.includes(id) && id !== this.writer;
@@ -231,6 +264,7 @@ export class Room {
       }
     }
     if (this.aiReady) this.openVoting();
+    else if (this.aiError) this.change("ai-error");
     else this.emit();
   }
   openVoting() {
@@ -328,12 +362,13 @@ export class Room {
       votedFor: this.votes?.[id] || null,
       participating: this.participants?.includes(id) || false,
       closing: this.closing || false,
+      ...(this.phase === "ai-error" ? { aiPending: this.aiPending } : {}),
       ballot: (this.ballots?.[id] || []).map((rid) => {
         const r = this.responses.find((r) => r.id === rid);
         return {
           id: r.id,
           text: r.text,
-          ...(revealed ? { author: r.author } : {}),
+          ...(revealed ? { author: r.author, model: r.model } : {}),
         };
       }),
     };
@@ -341,7 +376,6 @@ export class Room {
       Object.assign(state, {
         responses: this.responses,
         results: this.results,
-        fallback: this.fallback,
       });
     if (this.phase === "final") {
       const all = [...this.players.values()];

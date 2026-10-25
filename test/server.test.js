@@ -63,11 +63,16 @@ test("profile images are validated and converted to square compressed WebP", asy
 });
 
 test("real sockets complete a five-player game, reconnect, and keep ballots private", async (t) => {
+  let aiAttempts = 0;
   const server = createApp({
-    generate: async () => ({
-      text: "An artificially eloquent apology.",
-      fallback: false,
-    }),
+    generate: async () => {
+      if (++aiAttempts === 1) throw new Error("Temporary provider outage");
+      return {
+        text: "An artificially eloquent apology.",
+        model: "test-model",
+        responseId: "test-completion",
+      };
+    },
     durations: { selecting: 15 },
   });
   await new Promise((r) => server.http.listen(0, "127.0.0.1", r));
@@ -142,10 +147,14 @@ test("real sockets complete a five-player game, reconnect, and keep ballots priv
   await waitFor(() => active.every((c) => c.state.phase === "writing"));
   for (const c of active.filter((c) => c !== writer))
     await c.send("submit", { text: `Human response from ${c.state.self}` });
+  await waitFor(() => active.every((c) => c.state.phase === "ai-error"));
+  assert.ok(host.state.players.every((p) => p.score === 0));
+  assert.equal((await active[1].send("retry-ai")).ok, false);
+  assert.equal((await host.send("retry-ai")).ok, true);
   await waitFor(() => active.every((c) => c.state.phase === "voting"));
   for (const c of active) {
     assert.equal(c.state.ballot.length, 4);
-    assert.ok(c.state.ballot.every((r) => !("author" in r)));
+    assert.ok(c.state.ballot.every((r) => !("author" in r) && !("model" in r)));
     assert.ok(!JSON.stringify(c.state).includes("OPENAI"));
     const ai = c.state.ballot.find(
       (r) => r.text === "An artificially eloquent apology.",
@@ -162,4 +171,61 @@ test("real sockets complete a five-player game, reconnect, and keep ballots priv
   await host.send("again");
   await waitFor(() => host.state.phase === "lobby");
   assert.ok(host.state.players.every((p) => p.score === 0));
+});
+
+test("an unconfigured service explains why a game cannot start and never creates a fake AI entry", async (t) => {
+  const prior = Object.fromEntries(
+    ["SLOP_AI_API_KEY", "OPENAI_API_KEY"].map((key) => [key, process.env[key]]),
+  );
+  delete process.env.SLOP_AI_API_KEY;
+  delete process.env.OPENAI_API_KEY;
+  const server = createApp();
+  await new Promise((resolve) => server.http.listen(0, "127.0.0.1", resolve));
+  const url = `http://127.0.0.1:${server.http.address().port}`;
+  const sockets = [];
+  t.after(async () => {
+    sockets.forEach((socket) => socket.disconnect());
+    await server.close();
+    for (const [key, value] of Object.entries(prior)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+  let code;
+  let hostState;
+  for (let i = 0; i < 4; i++) {
+    const socket = client(url, {
+      transports: ["websocket"],
+      reconnection: false,
+    });
+    sockets.push(socket);
+    if (i === 0)
+      socket.on("state", (state) => {
+        hostState = state;
+      });
+    await new Promise((resolve) => socket.once("connect", resolve));
+    const result = await new Promise((resolve) =>
+      socket.emit(
+        "join",
+        {
+          name: `Human ${i}`,
+          token: randomBytes(32).toString("hex"),
+          create: i === 0,
+          code,
+        },
+        resolve,
+      ),
+    );
+    assert.equal(result.ok, true);
+    code ||= hostState.code;
+  }
+  await waitFor(() => hostState.players.length === 4);
+  assert.equal(hostState.aiConfigured, false);
+  const result = await new Promise((resolve) =>
+    sockets[0].emit("start", {}, resolve),
+  );
+  assert.equal(result.ok, false);
+  assert.match(result.error, /Connect AI/);
+  assert.equal(hostState.phase, "lobby");
+  assert.equal(server.rooms.get(code).round, 0);
 });

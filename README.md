@@ -19,9 +19,13 @@ For cloud machines with a read-only home directory, use `npm ci --cache /workspa
 
 Set `SLOP_AI_API_KEY` in the server environment for genuine AI responses from OpenAI. `OPENAI_API_KEY` is also accepted. Never put the key in browser code. For local development, copy `.env.example` to `.env` and fill in the key. `OPENAI_MODEL` optionally selects the model (default `gpt-4o-mini`). `PORT` changes the listening port.
 
-Without a key, or if the provider fails or exceeds an eight-second timeout, the server uses a scenario-specific preset fallback. It is explicitly disclosed at reveal. Fallback rounds are playable, but their competing entry is **not a newly generated AI response**. Human drafts and responses are never sent to the AI provider.
+A working API key is required to start a game. Every AI entry is generated for that round's scenario using the AI SDK and OpenAI; there are no canned substitutes. The model answers the scenario directly, rather than being prompted to imitate AI jargon. Responses must be complete and fit the same 180-character limit as human submissions. If the first response is empty, unfinished, or too long, the model gets one rewrite request; text is never cut off to make it fit.
 
-Cloud environment settings support an optional personal secret named `SLOP_AI_API_KEY`, restricted to `api.openai.com`. Enter its value securely in those settings, not in chat. Genuine provider generation needs that binding and network access; it has not been live-tested without credentials.
+Generation starts while the humans write. Transient provider failures get one retry, with a 20-second total deadline including any length correction. If generation still fails, the round pauses before voting. Human answers stay saved, no points are awarded, and only the host can retry generation for the same scenario. The reveal identifies the actual model; provider metadata stays hidden before voting ends. Human drafts and responses are never sent to the AI provider.
+
+Add `SLOP_AI_API_KEY` securely in your Render service's **Environment** settings, then save and redeploy. `OPENAI_API_KEY` also works. The key needs access to the selected model and available API credits. Never put it in browser code, Git, or chat. A key configured in an agent's environment does not automatically configure the Render service.
+
+The server logs a safe failure category (`authentication`, `rate_limit`, `timeout`, or `provider_unavailable`) without logging credentials, scenarios, or provider response bodies. A configured key is checked for presence before game start; validity and credits are checked by the provider during generation.
 
 ## Game rules and edge cases
 
@@ -40,7 +44,7 @@ Cloud environment settings support an optional personal secret named `SLOP_AI_AP
 npm test
 ```
 
-Node's test runner checks private ballots for rooms of 4–24 players, exposure balance, scoring, authorization, deadlines, writer rotation, fallback, host transfer, and a complete five-player game over real Socket.IO connections including reconnect and replay. `/health` returns `{"ok":true}`. There is no frontend build step.
+Node's test runner checks private ballots for rooms of 4–24 players, exposure balance, scoring, authorization, deadlines, writer rotation, generation failures and retry recovery, host transfer, and a complete five-player game over real Socket.IO connections including reconnect and replay. `/health` returns `{"ok":true}`. There is no frontend build step.
 
 ## Deploy on Render
 
@@ -48,7 +52,7 @@ The included `render.yaml` runs the frontend and WebSocket server together as on
 
 1. In [Render](https://dashboard.render.com/), choose **New → Blueprint**, connect `maxbye3/sloppy-vaseline`, and select `main`.
 2. Review the `slop-or-human` service and deploy. The Blueprint uses a free instance for evaluation. For reliable game nights, select an always-on paid instance in Render: free instances can sleep after inactivity, and waking takes time.
-3. For genuine AI responses, add `SLOP_AI_API_KEY` securely in the service's **Environment** settings. It is optional and intentionally absent from the Blueprint so fallback games can deploy without a key. Saving it may restart the service.
+3. Enter `SLOP_AI_API_KEY` securely when the Blueprint prompts for it, or add it in the service's **Environment** settings for an existing deployment. It is required for real AI responses. Saving it may restart the service.
 4. After deployment succeeds, open the HTTPS address Render provides and create a room. Share the invite link from that public site, rather than a localhost URL.
 
 The build installs locked dependencies, runs tests, then removes development dependencies. The service starts with `npm start`, listens on Render's supplied `PORT`, and reports readiness at `/health`. Keep a single instance because rooms live in process memory. Deployments and restarts end active games; deploy between sessions and consider disabling automatic deployments in the Render dashboard.
