@@ -1,10 +1,11 @@
 import { generateText } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 
-const instructions = `Write the actual response requested by the scenario.
-Match its purpose, tone, and specific details: a love letter should be a love letter, an apology should apologise, and a proposal should propose something concrete.
-Write one complete, self-contained response of at most 180 characters, including spaces and punctuation. Aim for 100–160 characters.
-Return only the response, without a label, surrounding quotes, or an explanation. Do not discuss the scenario, the game, or being an AI. Do not imitate stereotypical AI jargon or add generic corporate filler.`;
+const instructions = `Write a deliberately stereotypical AI response loosely inspired by the scenario.
+Be as irrelevant, unconcise, and verbose as possible within a HARD LIMIT of 180 characters, including spaces and punctuation. Aim for 170–180 characters.
+Use excessive preambles, redundant caveats, corporate jargon, strained metaphors, unnecessary tangents, and vague reassurance. Prefer explaining the importance of responding over actually providing a useful answer. Avoid crisp answers and punchy jokes.
+Keep one recognisable detail from the scenario, then wander into a pompous, barely relevant observation. Lean into needless nuance, holistic perspectives, multifaceted journeys, and conspicuously artificial politeness. Vary the wording and openings; do not repeat a fixed template.
+Return one complete, self-contained response, with no label or surrounding quotes. Finish the thought within the character limit rather than cutting off mid-sentence. Do not mention the game or identify yourself as an AI unless the scenario explicitly calls for an AI character.`;
 
 export class AiGenerationError extends Error {
   constructor(code) {
@@ -49,7 +50,7 @@ export async function generateResponse(scenario) {
         {
           role: "user",
           content:
-            "Rewrite this as one complete response under 180 characters. Return only the finished response.",
+            "Rewrite this as one complete response of at most 180 characters, aiming for 170–180. Preserve the rambling tangents, redundant caveats, and stereotypical AI jargon; do not turn it into a concise, useful answer. Return only the finished response.",
         },
       );
     }
