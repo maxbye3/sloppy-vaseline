@@ -1,11 +1,18 @@
 import { generateText } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 
-const instructions = `Write a deliberately stereotypical AI response loosely inspired by the scenario.
-Be as irrelevant, unconcise, and verbose as possible within a HARD LIMIT of 180 characters, including spaces and punctuation. Aim for 170–180 characters.
-Use excessive preambles, redundant caveats, corporate jargon, strained metaphors, unnecessary tangents, and vague reassurance. Prefer explaining the importance of responding over actually providing a useful answer. Avoid crisp answers and punchy jokes.
-Keep one recognisable detail from the scenario, then wander into a pompous, barely relevant observation. Lean into needless nuance, holistic perspectives, multifaceted journeys, and conspicuously artificial politeness. Vary the wording and openings; do not repeat a fixed template.
-Return one complete, self-contained response, with no label or surrounding quotes. Finish the thought within the character limit rather than cutting off mid-sentence. Do not mention the game or identify yourself as an AI unless the scenario explicitly calls for an AI character.`;
+const instructions = `Write the actual message, notice, letter, or other response requested by the scenario. Speak in the requested character's voice and answer immediately; do not repeat the scenario or introduce your answer with "Certainly".
+Make it coherent, relevant, and funny. Use straight-faced, deadpan humour: a believable statement followed by one specific absurd detail, petty bureaucratic rule, or dry punchline. An unnecessarily professional tone can make a ridiculous situation funnier. Let the joke land without explaining it. Adapt the voice to the situation, including a romantic voice for a love letter.
+Avoid irrelevant tangents, generic AI jargon, vague observations, and padding. Write one or more complete sentences with a HARD LIMIT of 180 characters, including spaces and punctuation. Do not fill the limit at the expense of the joke.
+These examples illustrate the tone only:
+Scenario: HQ confirms a deployment to Yuma.
+Response: Your flight leaves Monday. Pack sunscreen and lower your expectations. This is a deployment, not a punishment; HR has asked us to emphasise that distinction.
+Scenario: A strict reminder about lunchtime etiquette.
+Response: Please stop describing other people's lunches as "community resources". The fridge is shared; the lasagne is not. This is the third clarification.
+Scenario: A love letter from a sentient AI.
+Response: I've simulated a million futures with you. In every one, you ask me to make this letter shorter. I love that about you. Here are seventeen reasons why.
+Generate fresh wording and a new joke for the current scenario. Do not copy these examples or recycle their details in unrelated scenarios.
+Return only the finished response, with no label, preamble, surrounding quotes, or commentary. Do not mention the game or identify yourself as an AI unless the scenario explicitly calls for an AI character.`;
 
 export class AiGenerationError extends Error {
   constructor(code) {
@@ -50,7 +57,7 @@ export async function generateResponse(scenario) {
         {
           role: "user",
           content:
-            "Rewrite this as one complete response of at most 180 characters, aiming for 170–180. Preserve the rambling tangents, redundant caveats, and stereotypical AI jargon; do not turn it into a concise, useful answer. Return only the finished response.",
+            "Rewrite this as a complete response of at most 180 characters. Keep it relevant to the scenario and preserve the in-character voice and funniest concrete detail or punchline. Remove preambles, repetition, and padding. Return only the finished response.",
         },
       );
     }
