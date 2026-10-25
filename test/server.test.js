@@ -147,6 +147,14 @@ test("real sockets complete a five-player game, reconnect, and keep ballots priv
   await waitFor(() => active.every((c) => c.state.phase === "writing"));
   for (const c of active.filter((c) => c !== writer))
     await c.send("submit", { text: `Human response from ${c.state.self}` });
+  assert.equal(writer.state.phase, "writing");
+  assert.equal(writer.state.expected, 5);
+  assert.equal(writer.state.hasSubmitted, false);
+  assert.equal(
+    (await writer.send("submit", { text: "The scenario writer plays too." }))
+      .ok,
+    true,
+  );
   await waitFor(() => active.every((c) => c.state.phase === "ai-error"));
   assert.ok(host.state.players.every((p) => p.score === 0));
   assert.equal((await active[1].send("retry-ai")).ok, false);

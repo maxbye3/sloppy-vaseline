@@ -22,9 +22,11 @@ async function writing(room) {
 test("ballots exclude self, contain one AI, have no duplicates, and balance exposure", () => {
   for (let n = 4; n <= 24; n++) {
     const voters = Array.from({ length: n }, (_, i) => `p${i}`);
-    const responses = voters
-      .slice(1)
-      .map((author, i) => ({ id: `r${i}`, author, text: "human" }));
+    const responses = voters.map((author, i) => ({
+      id: `r${i}`,
+      author,
+      text: "human",
+    }));
     responses.push({ id: "ai", author: null, text: "AI" });
     for (let run = 0; run < 30; run++) {
       const { ballots, exposure } = makeBallots(voters, responses);
@@ -56,8 +58,7 @@ test("complete game enforces authority, preserves anonymity, scores once, and re
   t.after(() => room.destroy());
   assert.throws(() => room.begin("p1"), /host/);
   await writing(room);
-  assert.throws(() => room.submit(room.writer, "no"), /cannot/);
-  for (const id of room.participants.filter((id) => id !== room.writer)) {
+  for (const id of room.participants) {
     room.submit(id, `Human response ${id}`);
     if (room.phase === "writing")
       assert.throws(() => room.submit(id, "again"), /locked/);
@@ -109,7 +110,8 @@ test("deadline submits drafts, excludes blank responses, permits small ballots, 
   const room = fixture(4);
   t.after(() => room.destroy());
   await writing(room);
-  const [a, b, c] = room.participants.filter((id) => id !== room.writer);
+  const a = room.writer;
+  const [b, c] = room.participants.filter((id) => id !== room.writer);
   room.draft(a, "An unsubmitted but valid draft");
   room.draft(b, "   ");
   room.submit(c, "A locked response");
@@ -194,15 +196,14 @@ for (const failBeforeSubmissions of [true, false]) {
       requests[0].reject(new Error("Provider unavailable"));
       await flush();
     }
-    for (const id of room.participants.filter((id) => id !== writer))
-      room.submit(id, `Human ${id}`);
+    for (const id of room.participants) room.submit(id, `Human ${id}`);
     if (!failBeforeSubmissions) {
       requests[0].reject(new Error("Provider unavailable"));
       await flush();
     }
     assert.equal(room.phase, "ai-error");
     const humans = structuredClone(room.responses);
-    assert.equal(humans.length, 4);
+    assert.equal(humans.length, 5);
     assert.ok(humans.every((r) => r.author !== null));
     assert.ok([...room.players.values()].every((p) => p.score === 0));
     assert.equal(room.state(room.host).ballot.length, 0);
@@ -261,3 +262,57 @@ for (const ai of [
     assert.ok([...room.players.values()].every((p) => p.score === 0));
   });
 }
+
+test("the scenario writer submits, gets an anonymous ballot, and earns both detection and deception points", async (t) => {
+  const room = fixture(4);
+  t.after(() => room.destroy());
+  room.generate = async () => ({
+    text: "The real AI response is private until voting.",
+    model: "private-model",
+    responseId: "private-response-id",
+  });
+  await writing(room);
+  const writer = room.writer;
+  assert.equal(room.state(writer).expected, 4);
+  const writingState = JSON.stringify(room.state(writer));
+  assert.ok(!writingState.includes("The real AI response"));
+  assert.ok(!writingState.includes("private-model"));
+  assert.ok(!writingState.includes("private-response-id"));
+  room.draft(writer, "The scenario writer's own response.");
+  assert.equal(room.state(writer).draft, "The scenario writer's own response.");
+  for (const id of room.participants.filter((id) => id !== writer))
+    room.submit(id, `Another human response from ${id}`);
+  assert.equal(room.phase, "writing");
+  assert.equal(room.state(writer).submitted, 3);
+  room.submit(writer, room.state(writer).draft);
+  assert.equal(room.phase, "voting");
+  assert.equal(room.state(writer).hasSubmitted, true);
+  const ownResponse = room.responses.find((r) => r.author === writer);
+  const ai = room.responses.find((r) => r.author === null);
+  for (const id of room.participants) {
+    const state = room.state(id);
+    assert.equal(state.ballot.length, 4);
+    assert.ok(state.ballot.some((r) => r.id === ai.id));
+    assert.ok(
+      state.ballot.every(
+        (r) => !("author" in r) && !("model" in r) && !("responseId" in r),
+      ),
+    );
+    const own = room.responses.find((r) => r.author === id);
+    assert.ok(!state.ballot.some((r) => r.id === own.id));
+    assert.ok(!("responses" in state));
+  }
+  assert.throws(() => room.vote(writer, ownResponse.id), /ballot/);
+  for (const id of room.participants)
+    room.vote(id, id === writer ? ai.id : ownResponse.id);
+  assert.equal(room.phase, "reveal");
+  assert.equal(room.players.get(writer).score, 25);
+  const result = room.state(writer).results.find((r) => r.id === writer);
+  assert.equal(result.correct, true);
+  assert.equal(result.fooled, 3);
+  assert.equal(result.deception, 15);
+  assert.equal(
+    room.state(writer).responses.find((r) => r.author === null).model,
+    "private-model",
+  );
+});

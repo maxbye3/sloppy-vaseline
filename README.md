@@ -30,9 +30,10 @@ The server logs a safe failure category (`authentication`, `rate_limit`, `timeou
 ## Game rules and edge cases
 
 - The host starts, advances, and ends the game. Each round rotates the writer without repetition until everyone eligible has had a turn.
+- Everyone, including the scenario writer, submits a response and votes. AI text is hidden while writing, and its identity and model remain hidden from everyone until the reveal.
 - Selection lasts 3 seconds. The writer has 60 seconds to choose a scenario, then a preset is chosen automatically if needed. Responses get 60 seconds, and confirmed votes get 20 seconds.
 - Drafts synchronize to the server while typing and are submitted at expiry. Blank responses are omitted. Submitted responses and confirmed votes cannot change.
-- Ballots include the AI entry and up to three other human responses, balanced by exposure. A player never sees their own response. **Four choices require at least five players with all responses submitted.** With four players, or missing submissions, fewer choices are shown. No duplicates or fabricated human responses fill the gaps.
+- Ballots include the AI entry and up to three other human responses, balanced by exposure. A player never sees their own response. **Four players with all responses submitted receive four choices each.** Missing submissions can result in fewer choices. No duplicates or fabricated human responses fill the gaps.
 - Correct detection earns 10 points. Deception earns `round(15 × votes received / ballots shown)`, or zero with no exposure.
 - Profiles and scores survive browser refresh/reconnect. One browser session controls a player; opening its session in another tab transfers control. Host privileges transfer after 15 seconds offline. Late entrants wait until the game returns to the lobby.
 - Photos accept JPEG, PNG, and WebP up to 5 MB. The browser compresses them; the server validates and resizes to 128px square monochrome WebP.

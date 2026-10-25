@@ -221,7 +221,7 @@ export class Room {
     this.emit();
   }
   eligible(id) {
-    return this.participants.includes(id) && id !== this.writer;
+    return this.participants.includes(id);
   }
   draft(id, text) {
     if (
@@ -242,11 +242,7 @@ export class Room {
     text = validateText(text);
     this.responses.push({ id: randomUUID(), author: id, text });
     this.submitted.add(id);
-    if (
-      this.participants
-        .filter((p) => p !== this.writer)
-        .every((p) => this.submitted.has(p))
-    )
+    if (this.participants.every((p) => this.submitted.has(p)))
       this.closeWriting();
     else this.emit();
   }
@@ -353,7 +349,7 @@ export class Room {
       deadline: this.deadline,
       serverNow: Date.now(),
       submitted: this.submitted?.size || 0,
-      expected: Math.max(0, (this.participants?.length || 1) - 1),
+      expected: this.participants?.length || 0,
       hasSubmitted: this.submitted?.has(id) || false,
       draft: this.drafts?.[id] || "",
       voteCount: Object.keys(this.votes || {}).length,
