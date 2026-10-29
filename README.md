@@ -36,6 +36,7 @@ The server logs a safe failure category (`authentication`, `rate_limit`, `timeou
 - Everyone writes once per prompt, including the scenario writer. Every valid human response and exactly one AI response appear together on a single ballot, shuffled independently for each player. There are no voting groups or extra voting stages. Missing submissions are omitted. Your own response is visible but disabled, and the server rejects self-votes.
 - Correctly detecting the AI earns 10 points. Deception earns `round(15 × votes received / eligible ballots shown)`, or zero with no exposure. Exposure excludes the author, who cannot vote for themselves. Scores update once after voting ends.
 - Profiles and scores survive browser refresh/reconnect. One browser session controls a player; opening its session in another tab transfers control. Host privileges transfer after 15 seconds offline. Late entrants wait until the game returns to the lobby.
+- The lobby offers an optional Terminator theme using the supplied `public/audio/theme.mp3`. Playback is local to each device, begins only after clicking Play, loops while waiting, and can be paused. It pauses automatically when the game starts or the connection drops; returning to the lobby does not autoplay it.
 - Photos accept JPEG, PNG, and WebP up to 5 MB. The browser compresses them; the server validates and resizes to 128px square monochrome WebP.
 - Final awards use real votes, correct detections, and cumulative exposure; ties are shared and unearned awards show no contenders.
 

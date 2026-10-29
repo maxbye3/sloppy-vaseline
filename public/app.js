@@ -46,6 +46,50 @@ let rejoining = false;
 let errorTimer;
 let lastRenderedKey = "";
 let savedName = stored?.name || "";
+let lobbyMusic;
+let musicRequested = false;
+let musicAttempt = 0;
+
+function updateMusicButton() {
+  const button = $("#lobby-music");
+  if (!button) return;
+  button.textContent = musicRequested
+    ? "Pause the Terminator theme"
+    : "Play the Terminator theme while you wait?";
+  button.setAttribute("aria-pressed", String(musicRequested));
+}
+function pauseLobbyMusic() {
+  musicAttempt++;
+  musicRequested = false;
+  lobbyMusic?.pause();
+  updateMusicButton();
+}
+function toggleLobbyMusic() {
+  if (state?.phase !== "lobby") return;
+  if (musicRequested) return pauseLobbyMusic();
+  if (!lobbyMusic) {
+    lobbyMusic = new Audio();
+    lobbyMusic.preload = "none";
+    lobbyMusic.loop = true;
+    lobbyMusic.src = "/audio/theme.mp3";
+    lobbyMusic.addEventListener("error", () => {
+      if (!musicRequested) return;
+      pauseLobbyMusic();
+      if (state?.phase === "lobby")
+        error("The theme couldn’t play. Please try again.");
+    });
+  }
+  if (lobbyMusic.error) lobbyMusic.load();
+  const attempt = ++musicAttempt;
+  musicRequested = true;
+  updateMusicButton();
+  lobbyMusic.play().catch(() => {
+    if (attempt !== musicAttempt) return;
+    pauseLobbyMusic();
+    if (state?.phase === "lobby")
+      error("The theme couldn’t play. Please try again.");
+  });
+}
 
 function error(message) {
   $("#error").textContent = message;
@@ -227,6 +271,17 @@ function gameScreen() {
     html += `<p class="eyebrow">SLOP OR HUMAN · FINAL RESULTS</p><h2>${winners.length > 1 ? "Equally artificial." : "Almost too human."}</h2><div class="winner">${winners.length === 1 ? avatar(winners[0], true) : ""}<span class="winner-name">${esc(winners.map((p) => p.name).join(" & "))}</span></div><p class="small">${winners.length > 1 ? "Share the crown" : "Takes the crown"} with ${best} points.</p>${leaderboard()}<div class="awards">${state.awards.map((a) => `<div class="award"><p class="eyebrow">${esc(a.title)}</p><p>${a.winners.length ? esc(a.winners.map((id) => player(id).name).join(" & ")) : "No contenders. Yet."}</p></div>`).join("")}</div><div class="actions">${hostAction("Play again →", "again")}</div>`;
   }
   app.innerHTML = html;
+  if (state.phase === "lobby") {
+    const control = document.createElement("div");
+    control.className = "lobby-music";
+    const button = document.createElement("button");
+    button.id = "lobby-music";
+    button.type = "button";
+    button.onclick = toggleLobbyMusic;
+    control.append(button);
+    $(".lobby-actions").after(control);
+    updateMusicButton();
+  }
   document.querySelectorAll("[data-action]").forEach(
     (b) =>
       (b.onclick = async () => {
@@ -371,6 +426,7 @@ socket.on("connect", async () => {
   }
 });
 socket.on("disconnect", (reason) => {
+  pauseLobbyMusic();
   $("#connection").textContent =
     reason === "io server disconnect" ? "Disconnected" : "Reconnecting…";
 });
@@ -380,6 +436,7 @@ socket.on("replaced", () => {
   );
 });
 socket.on("state", (next) => {
+  if (next.phase !== "lobby") pauseLobbyMusic();
   clockOffset = next.serverNow - Date.now();
   if (lastRound !== next.round) {
     localDraft = "";

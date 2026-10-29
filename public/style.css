@@ -292,6 +292,9 @@ h3 {
   margin: 30px auto 0;
   max-width: 390px;
 }
+.lobby-music {
+  margin: 20px auto 0;
+}
 .note {
   border-top: 1px solid #000;
   margin: 38px auto 0;
