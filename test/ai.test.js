@@ -172,3 +172,19 @@ test("the generation deadline returns a clear failure without a substitute", asy
     (e) => e.code === "timeout",
   );
 });
+
+test("later groups get fresh provider text and duplicated AI text is rewritten", async (t) => {
+  configure(t);
+  const previous = "Earlier AI entry";
+  let calls = 0;
+  t.mock.method(globalThis, "fetch", async (_url, options) => {
+    const messages = JSON.parse(options.body).messages;
+    assert.ok(messages.some((m) => m.content.includes(previous)));
+    return completion(
+      ++calls === 1 ? previous : "A fresh joke for the same scenario.",
+    );
+  });
+  const result = await generateResponse("Lunch etiquette", [previous]);
+  assert.equal(calls, 2);
+  assert.equal(result.text, "A fresh joke for the same scenario.");
+});

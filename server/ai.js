@@ -27,13 +27,18 @@ const apiKey = () =>
 
 export const isAiConfigured = () => Boolean(apiKey());
 
-export async function generateResponse(scenario) {
+export async function generateResponse(scenario, previousResponses = []) {
   if (!isAiConfigured()) throw new AiGenerationError("not_configured");
   const openai = createOpenAI({ apiKey: apiKey() });
   const model = openai.chat(process.env.OPENAI_MODEL || "gpt-4o-mini");
   // One deadline covers provider retries and any length correction.
   const abortSignal = AbortSignal.timeout(20000);
   const messages = [{ role: "user", content: scenario }];
+  if (previousResponses.length)
+    messages.push({
+      role: "user",
+      content: `Write a different response to the same scenario, with a fresh joke. Do not repeat these earlier AI entries: ${JSON.stringify(previousResponses)}`,
+    });
   try {
     for (let attempt = 0; attempt < 2; attempt++) {
       const result = await generateText({
@@ -45,7 +50,12 @@ export async function generateResponse(scenario) {
         abortSignal,
       });
       const text = result.text.trim();
-      if (text && [...text].length <= 180 && result.finishReason === "stop") {
+      if (
+        text &&
+        [...text].length <= 180 &&
+        result.finishReason === "stop" &&
+        !previousResponses.includes(text)
+      ) {
         return {
           text,
           model: result.response.modelId,
@@ -57,7 +67,7 @@ export async function generateResponse(scenario) {
         {
           role: "user",
           content:
-            "Rewrite this as a complete response of at most 180 characters. Keep it relevant to the scenario and preserve the in-character voice and funniest concrete detail or punchline. Remove preambles, repetition, and padding. Return only the finished response.",
+            "Rewrite this as a complete response of at most 180 characters. Keep it relevant to the scenario and preserve the in-character voice and funniest concrete detail or punchline. Remove preambles, repetition, and padding. Use fresh wording and a different joke from any earlier AI entries. Return only the finished response.",
         },
       );
     }

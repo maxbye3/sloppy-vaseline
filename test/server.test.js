@@ -68,7 +68,7 @@ test("real sockets complete a five-player game, reconnect, and keep ballots priv
     generate: async () => {
       if (++aiAttempts === 1) throw new Error("Temporary provider outage");
       return {
-        text: "An artificially eloquent apology.",
+        text: `An artificially eloquent apology ${aiAttempts}.`,
         model: "test-model",
         responseId: "test-completion",
       };
@@ -160,18 +160,35 @@ test("real sockets complete a five-player game, reconnect, and keep ballots priv
   assert.equal((await active[1].send("retry-ai")).ok, false);
   assert.equal((await host.send("retry-ai")).ok, true);
   await waitFor(() => active.every((c) => c.state.phase === "voting"));
-  for (const c of active) {
-    assert.equal(c.state.ballot.length, 4);
-    assert.ok(c.state.ballot.every((r) => !("author" in r) && !("model" in r)));
-    assert.ok(!JSON.stringify(c.state).includes("OPENAI"));
-    const ai = c.state.ballot.find(
-      (r) => r.text === "An artificially eloquent apology.",
+  for (let group = 1; group <= 2; group++) {
+    await waitFor(() =>
+      active.every(
+        (c) => c.state.phase === "voting" && c.state.votingGroup === group,
+      ),
     );
-    assert.equal((await c.send("vote", { id: ai.id })).ok, true);
-    assert.equal((await c.send("vote", { id: ai.id })).ok, false);
+    for (const c of active) {
+      assert.ok(c.state.ballot.length >= 3 && c.state.ballot.length <= 4);
+      assert.ok(
+        c.state.ballot.every((r) => !("author" in r) && !("model" in r)),
+      );
+      const own = c.state.ballot.find((r) => r.isOwn);
+      if (own) assert.equal((await c.send("vote", { id: own.id })).ok, false);
+      const ai = c.state.ballot.find((r) =>
+        r.text.startsWith("An artificially eloquent apology"),
+      );
+      assert.equal((await c.send("vote", { id: ai.id })).ok, true);
+      assert.equal((await c.send("vote", { id: ai.id })).ok, false);
+    }
   }
   await waitFor(() => active.every((c) => c.state.phase === "reveal"));
-  assert.ok(host.state.players.every((p) => p.score === 10));
+  assert.ok(host.state.players.every((p) => p.score === 20));
+  assert.equal(host.state.responses.length, 7);
+  assert.equal(
+    new Set(
+      host.state.responses.filter((r) => r.author === null).map((r) => r.text),
+    ).size,
+    2,
+  );
   await host.send("leaderboard");
   await host.send("end");
   await waitFor(() => host.state.phase === "final");

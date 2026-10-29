@@ -21,18 +21,24 @@ export function shuffle(items) {
   return result;
 }
 
+export function groupResponses(responses) {
+  const humans = shuffle(responses.filter((r) => r.author !== null));
+  const groups = Array.from(
+    { length: Math.max(1, Math.ceil(humans.length / 3)) },
+    () => [],
+  );
+  humans.forEach((response, i) => groups[i % groups.length].push(response));
+  return groups;
+}
+
 export function makeBallots(voters, responses) {
   const humans = responses.filter((r) => r.author !== null);
-  const ai = responses.find((r) => r.author === null);
-  const exposure = Object.fromEntries(humans.map((r) => [r.id, 0]));
-  const ballots = {};
-  for (const voter of shuffle(voters)) {
-    const eligible = shuffle(humans.filter((r) => r.author !== voter));
-    eligible.sort((a, b) => exposure[a.id] - exposure[b.id]);
-    const selected = eligible.slice(0, 3);
-    for (const r of selected) exposure[r.id]++;
-    ballots[voter] = shuffle([...selected, ai]).map((r) => r.id);
-  }
+  const exposure = Object.fromEntries(
+    humans.map((r) => [r.id, voters.filter((id) => id !== r.author).length]),
+  );
+  const ballots = Object.fromEntries(
+    voters.map((id) => [id, shuffle(responses).map((r) => r.id)]),
+  );
   return { ballots, exposure };
 }
 
@@ -45,7 +51,7 @@ export class Room {
       selecting: 3000,
       scenario: 60000,
       writing: 60000,
-      voting: 40000,
+      voting: 30000,
       hostGrace: 15000,
       ...durations,
     };
@@ -129,8 +135,8 @@ export class Room {
     if (!["lobby", "leaderboard"].includes(this.phase))
       throw new Error("Finish this round first.");
     const active = [...this.players.values()].filter((p) => p.connected);
-    if (active.length < 4)
-      throw new Error("At least four connected players are needed.");
+    if (active.length < 3)
+      throw new Error("At least three connected players are needed.");
     this.participants = active.map((p) => p.id);
     let choices = active.filter((p) => !this.usedWriters.has(p.id));
     if (!choices.length) {
@@ -146,6 +152,9 @@ export class Room {
     this.submitted = new Set();
     this.votes = {};
     this.ballots = {};
+    this.groups = [];
+    this.groupIndex = 0;
+    this.votingHistory = [];
     this.exposure = {};
     this.results = [];
     this.aiReady = false;
@@ -160,7 +169,7 @@ export class Room {
     else if (this.phase === "scenario")
       this.setScenario(this.writer, shuffle(EXAMPLES)[0]);
     else if (this.phase === "writing") this.closeWriting();
-    else if (this.phase === "voting") this.reveal();
+    else if (this.phase === "voting") this.finishVoting();
   }
   setScenario(id, text) {
     if (this.phase !== "scenario" || id !== this.writer)
@@ -173,27 +182,34 @@ export class Room {
   requestAi() {
     if (this.aiPending || this.aiReady) return;
     const round = this.round;
+    const group = this.groupIndex;
+    const previous = this.responses
+      .filter((r) => r.author === null)
+      .map((r) => r.text);
     this.aiPending = true;
     this.aiError = false;
     // Neither drafts nor human submissions are ever passed to the AI provider.
     Promise.resolve()
-      .then(() => this.generate(this.scenario))
+      .then(() => this.generate(this.scenario, previous))
       .then((ai) => {
         if (
           this.round !== round ||
-          !["writing", "ai-error"].includes(this.phase)
+          this.groupIndex !== group ||
+          !["writing", "ai-loading", "ai-error"].includes(this.phase)
         )
           return;
         if (
           ai?.fallback ||
           typeof ai?.text !== "string" ||
           !ai.text.trim() ||
-          length(ai.text.trim()) > 180
+          length(ai.text.trim()) > 180 ||
+          previous.includes(ai.text.trim())
         )
           throw new Error("AI generation did not return a valid response.");
         this.responses.push({
           id: randomUUID(),
           author: null,
+          group,
           text: ai.text.trim(),
           model: ai.model,
           responseId: ai.responseId,
@@ -205,7 +221,8 @@ export class Room {
       .catch(() => {
         if (
           this.round !== round ||
-          !["writing", "ai-error"].includes(this.phase)
+          this.groupIndex !== group ||
+          !["writing", "ai-loading", "ai-error"].includes(this.phase)
         )
           return;
         this.aiPending = false;
@@ -259,43 +276,83 @@ export class Room {
         this.submitted.add(id);
       }
     }
+    this.groups = groupResponses(this.responses);
+    this.groups.forEach((responses, group) =>
+      responses.forEach((r) => {
+        r.group = group;
+      }),
+    );
     if (this.aiReady) this.openVoting();
     else if (this.aiError) this.change("ai-error");
     else this.emit();
   }
   openVoting() {
     this.closing = false;
-    const distribution = makeBallots(this.participants, this.responses);
+    const ai = this.responses.find(
+      (r) => r.author === null && r.group === this.groupIndex,
+    );
+    const distribution = makeBallots(this.participants, [
+      ...this.groups[this.groupIndex],
+      ai,
+    ]);
     this.ballots = distribution.ballots;
-    this.exposure = distribution.exposure;
+    Object.assign(this.exposure, distribution.exposure);
     this.change("voting", this.times.voting);
   }
   vote(id, responseId) {
     if (this.phase !== "voting" || !this.ballots[id]?.includes(responseId))
       throw new Error("Choose a response from your ballot.");
+    if (this.responses.find((r) => r.id === responseId)?.author === id)
+      throw new Error("You cannot vote for your own response.");
     if (this.votes[id]) throw new Error("Your vote is already locked.");
     this.votes[id] = responseId;
-    if (this.participants.every((p) => this.votes[p])) this.reveal();
+    if (this.participants.every((p) => this.votes[p])) this.finishVoting();
     else this.emit();
   }
-  reveal() {
+  finishVoting() {
     if (this.phase !== "voting") return;
-    const ai = this.responses.find((r) => r.author === null);
+    this.votingHistory.push({
+      ballots: this.ballots,
+      votes: { ...this.votes },
+    });
+    if (this.groupIndex + 1 === this.groups.length) return this.reveal();
+    this.groupIndex++;
+    this.votes = {};
+    this.ballots = {};
+    this.aiReady = false;
+    this.closing = true;
+    this.change("ai-loading");
+    this.requestAi();
+  }
+  reveal() {
+    if (
+      this.phase !== "voting" ||
+      this.votingHistory.length !== this.groups.length
+    )
+      return;
     this.results = this.participants.map((id) => {
       const p = this.players.get(id);
       const response = this.responses.find((r) => r.author === id);
       const fooled = response
-        ? Object.values(this.votes).filter((v) => v === response.id).length
+        ? this.votingHistory
+            .flatMap((h) => Object.values(h.votes))
+            .filter((v) => v === response.id).length
         : 0;
       const shown = response ? this.exposure[response.id] || 0 : 0;
-      const correct = this.votes[id] === ai.id;
+      const correct = this.votingHistory.filter((h, group) => {
+        const ai = this.responses.find(
+          (r) => r.author === null && r.group === group,
+        );
+        return h.votes[id] === ai.id;
+      }).length;
+      const detectionPoints = correct * 10;
       const deception = shown ? Math.round((15 * fooled) / shown) : 0;
-      const points = (correct ? 10 : 0) + deception;
+      const points = detectionPoints + deception;
       p.score += points;
       p.correct += Number(correct);
       p.fooled += fooled;
       p.shown += shown;
-      return { id, fooled, shown, correct, deception, points };
+      return { id, fooled, shown, correct, detectionPoints, deception, points };
     });
     this.change("reveal");
   }
@@ -324,6 +381,9 @@ export class Room {
     this.responses = [];
     this.ballots = {};
     this.votes = {};
+    this.groups = [];
+    this.groupIndex = 0;
+    this.votingHistory = [];
     this.change("lobby");
   }
   state(id) {
@@ -341,6 +401,8 @@ export class Room {
       code: this.code,
       phase: this.phase,
       round: this.round,
+      votingGroup: (this.groupIndex || 0) + 1,
+      groupCount: this.groups?.length || 0,
       host: this.host,
       players,
       self: id,
@@ -359,11 +421,21 @@ export class Room {
       participating: this.participants?.includes(id) || false,
       closing: this.closing || false,
       ...(this.phase === "ai-error" ? { aiPending: this.aiPending } : {}),
-      ballot: (this.ballots?.[id] || []).map((rid) => {
+      ballot: (revealed
+        ? this.votingHistory.flatMap((h) => h.ballots[id] || [])
+        : this.ballots?.[id] || []
+      ).map((rid) => {
         const r = this.responses.find((r) => r.id === rid);
         return {
           id: r.id,
           text: r.text,
+          isOwn: r.author === id,
+          ...(revealed
+            ? {
+                group: r.group + 1,
+                voted: this.votingHistory[r.group]?.votes[id] === rid,
+              }
+            : {}),
           ...(revealed ? { author: r.author, model: r.model } : {}),
         };
       }),

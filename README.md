@@ -1,6 +1,6 @@
 # Slop or Human
 
-A browser party game for 4–24 players. Write something that sounds like AI, then find the actual bot among your friends. Black and white, Times New Roman, and no accounts.
+A browser party game for 3–24 players. Write something that sounds like AI, then find the actual bot among your friends. Black and white, Times New Roman, and no accounts.
 
 ## Run
 
@@ -19,9 +19,9 @@ For cloud machines with a read-only home directory, use `npm ci --cache /workspa
 
 Set `SLOP_AI_API_KEY` in the server environment for genuine AI responses from OpenAI. `OPENAI_API_KEY` is also accepted. Never put the key in browser code. For local development, copy `.env.example` to `.env` and fill in the key. `OPENAI_MODEL` optionally selects the model (default `gpt-4o-mini`). `PORT` changes the listening port.
 
-A working API key is required to start a game. Every AI entry is generated for that round's scenario using the AI SDK and OpenAI; there are no canned substitutes. The model answers directly in the requested voice, using relevant, coherent, deadpan humour: a believable statement with a specific absurd detail, petty bureaucratic rule, or dry punchline. Style examples guide the tone, but each round requests fresh wording and a new joke instead of repeating the scenario or copying an example. Responses must be complete and fit the same hard 180-character limit as human submissions, without padding to fill it. If the first response is empty, unfinished, or too long, the model gets one rewrite request that preserves the scenario, voice, and joke; text is never cut off to make it fit.
+A working API key is required to start a game. Each voting group gets a separately generated AI entry for the same scenario using the AI SDK and OpenAI; there are no canned substitutes. The model answers directly in the requested voice, using relevant, coherent, deadpan humour: a believable statement with a specific absurd detail, petty bureaucratic rule, or dry punchline. Style examples guide the tone, but each round requests fresh wording and a new joke instead of repeating the scenario or copying an example. Responses must be complete and fit the same hard 180-character limit as human submissions, without padding to fill it. If the first response is empty, unfinished, or too long, the model gets one rewrite request that preserves the scenario, voice, and joke; text is never cut off to make it fit.
 
-Generation starts while the humans write. Transient provider failures get one retry, with a 20-second total deadline including any length correction. If generation still fails, the round pauses before voting. Human answers stay saved, no points are awarded, and only the host can retry generation for the same scenario. The reveal identifies the actual model; provider metadata stays hidden before voting ends. Human drafts and responses are never sent to the AI provider.
+The first AI response is generated while the humans write. Later groups get fresh, distinct AI responses before their voting begins; previous AI text can guide avoiding duplicates, but no human submissions are sent to the provider. There is one successful generation per voting group, plus any necessary retries or rewrites. Transient provider failures get one retry, with a 20-second total deadline including any length correction. If generation still fails, the round pauses before voting. Human answers stay saved, no points are awarded, and only the host can retry generation for the same scenario. The reveal identifies the actual model; provider metadata stays hidden before voting ends. Human drafts and responses are never sent to the AI provider.
 
 Add `SLOP_AI_API_KEY` securely in your Render service's **Environment** settings, then save and redeploy. `OPENAI_API_KEY` also works. The key needs access to the selected model and available API credits. Never put it in browser code, Git, or chat. A key configured in an agent's environment does not automatically configure the Render service.
 
@@ -31,10 +31,11 @@ The server logs a safe failure category (`authentication`, `rate_limit`, `timeou
 
 - The host starts, advances, and ends the game. Each round rotates the writer without repetition until everyone eligible has had a turn.
 - Everyone, including the scenario writer, submits a response and votes. AI text is hidden while writing, and its identity and model remain hidden from everyone until the reveal.
-- Selection lasts 3 seconds. The writer has 60 seconds to choose a scenario, then a preset is chosen automatically if needed. Responses get 60 seconds, and confirmed votes get 40 seconds. Voting ends immediately when everyone has confirmed a vote; the countdown is hidden.
+- Selection lasts 3 seconds. The writer has 60 seconds to choose a scenario, then a preset is chosen automatically if needed. Responses get 60 seconds, and each voting group gets a visible 30-second countdown. Each group ends immediately when everyone has confirmed a vote. Authors and scores stay hidden until all groups finish.
 - Drafts synchronize to the server while typing and are submitted at expiry. Blank responses are omitted. Submitted responses and confirmed votes cannot change.
-- Ballots include the AI entry and up to three other human responses, balanced by exposure. A player never sees their own response. **Four players with all responses submitted receive four choices each.** Missing submissions can result in fewer choices. No duplicates or fabricated human responses fill the gaps.
-- Correct detection earns 10 points. Deception earns `round(15 × votes received / ballots shown)`, or zero with no exposure.
+- Everyone writes once per prompt. Responses are shuffled into balanced groups of at most three humans, each with its own AI entry. Everyone votes on every group; each human response appears exactly once to every player. For 3–9 submissions, group sizes are `3`, `2+2`, `3+2`, `3+3`, `3+2+2`, `3+3+2`, and `3+3+3`. Missing responses reduce the group count. Your own response is visible but disabled, and the server rejects self-votes.
+- An author can eliminate their own entry; group sizes and membership are randomized each prompt to spread that advantage.
+- Each correctly detected AI response earns 10 points; missed voting groups earn no detection points. Deception earns `round(15 × votes received / eligible ballots shown)`, or zero with no exposure. Exposure excludes the author, who cannot vote for themselves. All group results are aggregated once per prompt before updating the leaderboard.
 - Profiles and scores survive browser refresh/reconnect. One browser session controls a player; opening its session in another tab transfers control. Host privileges transfer after 15 seconds offline. Late entrants wait until the game returns to the lobby.
 - Photos accept JPEG, PNG, and WebP up to 5 MB. The browser compresses them; the server validates and resizes to 128px square monochrome WebP.
 - Final awards use real votes, correct detections, and cumulative exposure; ties are shared and unearned awards show no contenders.
@@ -45,7 +46,7 @@ The server logs a safe failure category (`authentication`, `rate_limit`, `timeou
 npm test
 ```
 
-Node's test runner checks private ballots for rooms of 4–24 players, exposure balance, scoring, authorization, deadlines, writer rotation, generation failures and retry recovery, host transfer, and a complete five-player game over real Socket.IO connections including reconnect and replay. `/health` returns `{"ok":true}`. There is no frontend build step.
+Node's test runner checks grouped ballots for rooms of 3–24 players, equal exposure, self-vote rejection, scoring, authorization, deadlines, writer rotation, generation failures and retry recovery, host transfer, and a complete five-player game over real Socket.IO connections including reconnect and replay. `/health` returns `{"ok":true}`. There is no frontend build step.
 
 ## Deploy on Render
 
