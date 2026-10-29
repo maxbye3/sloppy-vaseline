@@ -198,25 +198,23 @@ function gameScreen() {
     html += `<p class="eyebrow">ROUND ${state.round} · THE IMITATION</p><div class="timer" data-timer></div><p class="scenario">${esc(state.scenario)}</p>`;
     if (state.closing)
       html +=
-        '<div class="waiting"><h3>The submissions are in.</h3><p>Preparing the first voting group…</p></div>';
+        '<div class="waiting"><h3>The submissions are in.</h3><p>Preparing the ballot…</p></div>';
     else if (state.hasSubmitted)
       html +=
         '<div class="waiting"><p class="eyebrow">RESPONSE LOCKED</p><h3>Suspiciously well put.</h3><p>Waiting for the other humans.</p></div>';
     else
       html += `<p class="small">Write something so convincingly AI-generated<br>that everyone thinks you’re the bot.</p>${compose("response")}`;
     html += `<p class="count-caption">${state.submitted} / ${state.expected} responses locked in</p>`;
-  } else if (state.phase === "ai-loading") {
-    html += `<p class="eyebrow">ROUND ${state.round} · VOTING GROUP ${state.votingGroup} OF ${state.groupCount}</p><h2>A fresh batch of slop.</h2><p class="scenario">${esc(state.scenario)}</p><p class="small" role="status">Preparing a different AI response for the next group. Your votes are saved.</p>`;
   } else if (state.phase === "ai-error") {
     html += `<p class="eyebrow">ROUND ${state.round} · WAITING FOR AI</p><h2>${state.aiPending ? "Trying the AI again…" : "The bot missed its cue."}</h2><p class="scenario">${esc(state.scenario)}</p><p class="small" role="status">${state.aiPending ? "Generating a real response. Your answers are saved." : "The AI couldn’t generate a response. Your answers are saved, and this round will continue when it responds."}</p><div class="actions">${isHost() ? `<button class="primary" data-action="retry-ai" ${state.aiPending ? "disabled" : ""}>${state.aiPending ? "Generating…" : "Try the AI again →"}</button>` : '<p class="small muted">Waiting for the host to retry.</p>'}</div>`;
   } else if (state.phase === "voting") {
-    html += `<p class="eyebrow">ROUND ${state.round} · VOTING GROUP ${state.votingGroup} OF ${state.groupCount}</p><div class="timer" data-timer></div><p class="scenario">${esc(state.scenario)}</p><h3>Which one is the bot?</h3><p class="small">One is artificial. The others are trying very hard.</p><div class="ballots">${state.ballot.map((r, i) => `<button class="ballot ${selected === r.id || state.votedFor === r.id ? "selected" : ""}" data-response="${r.id}" aria-pressed="${selected === r.id || state.votedFor === r.id}" ${state.hasVoted || r.isOwn ? "disabled" : ""}><span class="letter">${String.fromCharCode(65 + i)}</span><span class="ballot-text">${esc(r.text)}${r.isOwn ? '<span class="ballot-meta">Your response · you cannot vote for this</span>' : ""}</span></button>`).join("")}</div>${state.ballot.length < 4 ? '<p class="small muted">A smaller group this time. Every submitted response gets its turn.</p>' : ""}<button class="primary" id="confirm-vote" ${!selected || state.hasVoted ? "disabled" : ""}>${state.hasVoted ? "Vote locked in" : "Confirm my suspicion →"}</button><p class="count-caption">${state.voteCount} / ${state.voterCount} votes locked in</p>`;
+    html += `<p class="eyebrow">ROUND ${state.round} · THE DETECTION</p><div class="timer" data-timer></div><p class="scenario">${esc(state.scenario)}</p><h3>Which one is the bot?</h3><p class="small">One is artificial. The others are trying very hard.</p><div class="ballots">${state.ballot.map((r, i) => `<button class="ballot ${selected === r.id || state.votedFor === r.id ? "selected" : ""}" data-response="${r.id}" aria-pressed="${selected === r.id || state.votedFor === r.id}" ${state.hasVoted || r.isOwn ? "disabled" : ""}><span class="letter">${String.fromCharCode(65 + i)}</span><span class="ballot-text">${esc(r.text)}${r.isOwn ? '<span class="ballot-meta">Your response · you cannot vote for this</span>' : ""}</span></button>`).join("")}</div><button class="primary" id="confirm-vote" ${!selected || state.hasVoted ? "disabled" : ""}>${state.hasVoted ? "Vote locked in" : "Confirm my suspicion →"}</button><p class="count-caption">${state.voteCount} / ${state.voterCount} votes locked in</p>`;
   } else if (state.phase === "reveal") {
     const result = state.results.find((r) => r.id === state.self);
-    html += `<p class="eyebrow">ROUND ${state.round} · THE REVEAL</p><h2>${result?.correct ? "You spotted the slop." : state.hasVoted ? "Convincing, wasn’t it?" : "The truth comes out."}</h2><p class="scenario">${esc(state.scenario)}</p><p class="small">All voting groups, with the masks off.</p><div class="ballots reveal-list">${state.ballot
+    html += `<p class="eyebrow">ROUND ${state.round} · THE REVEAL</p><h2>${result?.correct ? "You spotted the slop." : state.hasVoted ? "Convincing, wasn’t it?" : "The truth comes out."}</h2><p class="scenario">${esc(state.scenario)}</p><p class="small">Every response, with the masks off.</p><div class="ballots reveal-list">${state.ballot
       .map((r, i) => {
         const stats = state.results.find((p) => p.id === r.author);
-        return `${i === 0 || state.ballot[i - 1].group !== r.group ? `<h3>Voting group ${r.group}</h3>` : ""}<div class="ballot ${r.author === null ? "ai" : ""}"><span class="letter">${String.fromCharCode(65 + state.ballot.slice(0, i).filter((previous) => previous.group === r.group).length)}</span><div class="ballot-text">${r.author === null ? `<span class="ballot-label">THE ACTUAL AI</span><br>` : ""}${esc(r.text)}<span class="ballot-meta">${r.author === null ? esc(r.model ? `Generated by OpenAI · ${r.model}` : "AI generated") : esc(player(r.author)?.name)}${stats ? ` · Fooled ${stats.fooled} of ${stats.shown} voters` : ""}${r.voted ? " · Your vote" : ""}</span></div></div>`;
+        return `<div class="ballot ${r.author === null ? "ai" : ""}"><span class="letter">${String.fromCharCode(65 + i)}</span><div class="ballot-text">${r.author === null ? `<span class="ballot-label">THE ACTUAL AI</span><br>` : ""}${esc(r.text)}<span class="ballot-meta">${r.author === null ? esc(r.model ? `Generated by OpenAI · ${r.model}` : "AI generated") : esc(player(r.author)?.name)}${stats ? ` · Fooled ${stats.fooled} of ${stats.shown} voters` : ""}${r.voted ? " · Your vote" : ""}</span></div></div>`;
       })
       .join(
         "",
@@ -389,8 +387,7 @@ socket.on("state", (next) => {
     selected = null;
     lastRound = next.round;
   }
-  if (state?.phase !== next.phase || state?.votingGroup !== next.votingGroup)
-    selected = null;
+  if (state?.phase !== next.phase) selected = null;
   if (!localDraft && next.draft) localDraft = next.draft;
   state = next;
   persist(next.code);

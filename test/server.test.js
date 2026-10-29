@@ -160,35 +160,23 @@ test("real sockets complete a five-player game, reconnect, and keep ballots priv
   assert.equal((await active[1].send("retry-ai")).ok, false);
   assert.equal((await host.send("retry-ai")).ok, true);
   await waitFor(() => active.every((c) => c.state.phase === "voting"));
-  for (let group = 1; group <= 2; group++) {
-    await waitFor(() =>
-      active.every(
-        (c) => c.state.phase === "voting" && c.state.votingGroup === group,
-      ),
-    );
-    for (const c of active) {
-      assert.ok(c.state.ballot.length >= 3 && c.state.ballot.length <= 4);
-      assert.ok(
-        c.state.ballot.every((r) => !("author" in r) && !("model" in r)),
-      );
-      const own = c.state.ballot.find((r) => r.isOwn);
-      if (own) assert.equal((await c.send("vote", { id: own.id })).ok, false);
-      const ai = c.state.ballot.find((r) =>
-        r.text.startsWith("An artificially eloquent apology"),
-      );
-      assert.equal((await c.send("vote", { id: ai.id })).ok, true);
-      assert.equal((await c.send("vote", { id: ai.id })).ok, false);
-    }
+  const aiId = host.state.ballot.find((r) =>
+    r.text.startsWith("An artificially eloquent apology"),
+  ).id;
+  for (const c of active) {
+    assert.equal(c.state.ballot.length, 6);
+    assert.ok(c.state.ballot.every((r) => !("author" in r) && !("model" in r)));
+    const own = c.state.ballot.find((r) => r.isOwn);
+    assert.ok(own);
+    assert.equal((await c.send("vote", { id: own.id })).ok, false);
+    assert.equal((await c.send("vote", { id: aiId })).ok, true);
+    assert.equal((await c.send("vote", { id: aiId })).ok, false);
   }
   await waitFor(() => active.every((c) => c.state.phase === "reveal"));
-  assert.ok(host.state.players.every((p) => p.score === 20));
-  assert.equal(host.state.responses.length, 7);
-  assert.equal(
-    new Set(
-      host.state.responses.filter((r) => r.author === null).map((r) => r.text),
-    ).size,
-    2,
-  );
+  assert.ok(host.state.players.every((p) => p.score === 10));
+  assert.equal(host.state.responses.length, 6);
+  assert.equal(host.state.responses.filter((r) => r.author === null).length, 1);
+  assert.equal(aiAttempts, 2); // One failed request and one successful host retry.
   await host.send("leaderboard");
   await host.send("end");
   await waitFor(() => host.state.phase === "final");
