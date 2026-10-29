@@ -179,7 +179,7 @@ function gameScreen() {
   const old = $("#response");
   const focus = document.activeElement === old && old;
   const cursor = focus ? [old.selectionStart, old.selectionEnd] : null;
-  const detailsOpen = $(".examples")?.open;
+  const detailsOpen = $(".examples")?.open ?? true;
   clearTimeout(selectorTimer);
   let html = bar();
   if (state.phase === "lobby") {
