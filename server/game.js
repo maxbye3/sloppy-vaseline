@@ -45,7 +45,7 @@ export class Room {
       selecting: 3000,
       scenario: 60000,
       writing: 60000,
-      voting: 20000,
+      voting: 40000,
       hostGrace: 15000,
       ...durations,
     };

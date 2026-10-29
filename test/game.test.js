@@ -65,7 +65,8 @@ test("complete game enforces authority, preserves anonymity, scores once, and re
   }
   assert.equal(room.phase, "voting");
   assert.equal(room.state("p0").closing, false);
-  assert.ok(room.state("p0").deadline > Date.now());
+  const votingTimeLeft = room.state("p0").deadline - Date.now();
+  assert.ok(votingTimeLeft > 39000 && votingTimeLeft <= 40000);
   for (const id of room.participants) {
     const s = room.state(id);
     assert.equal(s.ballot.length, 4);
@@ -80,6 +81,10 @@ test("complete game enforces authority, preserves anonymity, scores once, and re
     const vote = room.ballots[id].includes(target.id) ? target.id : ai.id;
     if (vote === target.id) deceived++;
     room.vote(id, vote);
+    assert.equal(
+      room.phase,
+      id === room.participants.at(-1) ? "reveal" : "voting",
+    );
     assert.throws(() => room.vote(id, vote));
   }
   assert.equal(room.phase, "reveal");

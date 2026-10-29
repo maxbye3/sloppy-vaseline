@@ -31,7 +31,7 @@ The server logs a safe failure category (`authentication`, `rate_limit`, `timeou
 
 - The host starts, advances, and ends the game. Each round rotates the writer without repetition until everyone eligible has had a turn.
 - Everyone, including the scenario writer, submits a response and votes. AI text is hidden while writing, and its identity and model remain hidden from everyone until the reveal.
-- Selection lasts 3 seconds. The writer has 60 seconds to choose a scenario, then a preset is chosen automatically if needed. Responses get 60 seconds, and confirmed votes get 20 seconds.
+- Selection lasts 3 seconds. The writer has 60 seconds to choose a scenario, then a preset is chosen automatically if needed. Responses get 60 seconds, and confirmed votes get 40 seconds. Voting ends immediately when everyone has confirmed a vote; the countdown is hidden.
 - Drafts synchronize to the server while typing and are submitted at expiry. Blank responses are omitted. Submitted responses and confirmed votes cannot change.
 - Ballots include the AI entry and up to three other human responses, balanced by exposure. A player never sees their own response. **Four players with all responses submitted receive four choices each.** Missing submissions can result in fewer choices. No duplicates or fabricated human responses fill the gaps.
 - Correct detection earns 10 points. Deception earns `round(15 × votes received / ballots shown)`, or zero with no exposure.
